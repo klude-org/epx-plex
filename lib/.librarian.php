@@ -1946,6 +1946,16 @@ function fs_put_htaccess($s_dir){
     HTACCESS);
 }
 
+function pkg__access_type(){
+    return $this->I__PKG_ACCESS_TYPE ??  $this->I__PKG_ACCESS_TYPE = (\is_file("{$this->PKG_DIR}/index.php")
+        ? (\is_file("{$this->PKG_DIR}/.htaccess")
+            ? 'direct-access'
+            : 'relay-access'
+        )
+        : 'no-access'
+    );
+}
+
 #endregion
 # ######################################################################################################################
 #region INDEX
@@ -1996,22 +2006,36 @@ function index__c(){
                         && !\str_starts_with($path,\basename($this->PLEX_DIR))
                         && empty($pathlist[$path]) 
                         && ($start_at = $v['start_at'] ?? "") 
-                        //&& \is_file()
                     ){
                         $pathlist[$path] = true;
                         $path = '/'.\trim($path,'/');
                         $path = ($path == '/') ? '' : $path;
-                        $start_file = \str_replace('\\','/', \realpath($start_at));
                         $data['linelist'][$k] = $v;
-                        $data['linelist'][$k]['start_file'] = $start_file;
                         $data['linelist'][$k]['url'] = $s_url = "{$r_url}{$path}";
                         $data['linelist'][$k]['dir'] = $s_dir = "{$r_dir}{$path}";
-                        $this->fs_put_htaccess($s_dir);
-                        $this->fs_put_indexphp($s_dir,<<<PHP
-                        <?php 
-                        \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
-                        \is_callable(\$x = (include "{$start_file}")) AND \$x();
-                        PHP);
+                        if(\basename($start_at) == '.app.php'){
+                            $start_file = \_\START_DIR.'/.launch.php';
+                            $data['linelist'][$k]['app_file'] = $app_file = $start_at;
+                            $data['linelist'][$k]['inst_dir'] = $inst_dir = \dirname($start_at,3);
+                            $data['linelist'][$k]['start_file'] = $start_file;
+                            $this->fs_put_htaccess($s_dir);
+                            $this->fs_put_indexphp($s_dir,<<<PHP
+                            <?php 
+                            \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
+                            \defined('_\INST_DIR') OR \define('_\INST_DIR', '{$inst_dir}');
+                            \defined('_\APP_FILE') OR \define('_\APP_FILE', '{$app_file}');
+                            \is_callable(\$x = (include "{$start_file}")) AND \$x();
+                            PHP);
+                        } else {
+                            $start_file = \str_replace('\\','/', \realpath($start_at));
+                            $data['linelist'][$k]['start_file'] = $start_file;
+                            $this->fs_put_htaccess($s_dir);
+                            $this->fs_put_indexphp($s_dir,<<<PHP
+                            <?php 
+                            \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
+                            \is_callable(\$x = (include "{$start_file}")) AND \$x();
+                            PHP);
+                        }
                     }
                 }
                 \file_put_contents($access_file, \json_encode($data, JSON_PRETTY_PRINT  | JSON_UNESCAPED_SLASHES));
@@ -2154,12 +2178,20 @@ function index__c(){
                     foreach($this->PKG_LIST as $k => $v){
                         $vr = $v['repo'].' | '.$v['owner'];
                         $dl = "{$v['dir']}/lib";
-                        foreach(\glob("{$dl}/{*/,}.start{-*,}.php", GLOB_BRACE) as $f){
+                        foreach(\glob("{$dl}/{*/,}{.start}{-*,}.php", GLOB_BRACE) as $f){
                             //Todo: simplify using preg_match
                             $m = (($dx = \dirname($f)) == $dl) ? '[L]' : \basename($dx);
                             $starts[$f] = 'START | '.((($n = \basename($f)) == '.start.php')
                                 ? $m.' | '.$vr
                                 : $m.' ('.\substr($n,7,-4).') | '.$vr
+                            );
+                        }
+                        foreach(\glob("{$dl}/*/{.app}{-*,}.php", GLOB_BRACE) as $f){
+                            //Todo: simplify using preg_match
+                            $m = (($dx = \dirname($f)) == $dl) ? '[L]' : \basename($dx);
+                            $starts[$f] = 'APP | '.((($n = \basename($f)) == '.app.php')
+                                ? $m.' | '.$vr
+                                : $m.' ('.\substr($n,5,-4).') | '.$vr
                             );
                         }
                         foreach(\glob("{$v['dir']}/index.php", GLOB_BRACE) as $f){
@@ -2346,13 +2378,13 @@ function index__c(){
         ){
             $this->vars['xui/main/content'] ??= function(){ ?>
                 <div class="container d-flex flex-column justify-content-center align-items-center text-center min-vh-100">
-                <div>
-                    <h1 class="fw-semibold  mb-2"><i class="bi bi-exclamation-triangle-fill text-danger fs-2 mb-3"></i> Package Not Found</h1>
-                    <p class="text-muted fs-6">
-                    The package you’re trying to access doesn’t exist or may have been removed.<br>
-                    Please select a valid package from the sidebar or create a new one.
-                    </p>
-                </div>
+                    <div>
+                        <h1 class="fw-semibold  mb-2"><i class="bi bi-exclamation-triangle-fill text-danger fs-2 mb-3"></i> Package Not Found</h1>
+                        <p class="text-muted fs-6">
+                        The package you’re trying to access doesn’t exist or may have been removed.<br>
+                        Please select a valid package from the sidebar or create a new one.
+                        </p>
+                    </div>
                 </div>
             <?php };
         } else if($this->GH_OWNER == 'junction') {
@@ -2368,6 +2400,31 @@ function index__c(){
                     }
                     $this->json_response(true, ['note' => "Backedup at '{$backup_dir}'"]);
                 }
+                
+                if ($action === 'change_access'){
+                    $indexphp__content = <<<PHP
+                    <?php 
+                    \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \str_replace('\\\\','/', \dirname(__DIR__)));
+                    \defined('_\INST_DIR') OR \define('_\INST_DIR', \str_replace('\\\\','/', __DIR__));
+                    return include __DIR__.'/lib/app/.start.php';
+                    PHP;
+                    switch($_REQUEST['access_type'] ?? ''){
+                        case 'no-access' : {
+                            \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
+                            \is_file($f = "{$this->PKG_DIR}/index.php") AND unlink($f);
+                        } break;
+                        case 'relay-access':{
+                            \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
+                            $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
+                        } break;
+                        case 'direct-access':{
+                            $this->fs_put_htaccess($this->PKG_DIR);
+                            $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
+                        } break;
+                    }
+                    $this->json_response(true, ['note' => "Done"]);
+                }
+                
                 \header("Location: {$_SERVER['REQUEST_URI']}");
                 exit();
             }
@@ -2381,9 +2438,20 @@ function index__c(){
                         If  you need to remove the junction you can do so by clicking the 'Remove' button.
                         </p>
                     </div>
-                    <button type="button" class="btn btn-outline-danger" id="btnDeletePackage">
-                        Remove
-                    </button>
+                    <div class="row">
+                        <div class="col">
+                            <select class="form-control" id="selectPackageAccess">
+                                <option value="<?=$x='no-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>None</option>
+                                <option value="<?=$x='relay-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>Relay</option>
+                                <option value="<?=$x='direct-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>Direct</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <button type="button" class="btn btn-outline-danger" id="btnDeletePackage">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
                 </div>
             <?php };
         } else if(
@@ -2407,13 +2475,6 @@ function index__c(){
             $this->PKG_NAME = $this->PKG_STUB;
             $this->PKG_INFO = $this->pkg_info();
             $this->PKG_STATE = $this->pkg_state();
-            $this->PKG_ACCESS_TYPE = (\is_file("{$this->PKG_DIR}/index.php")
-                ? (\is_file("{$this->PKG_DIR}/.htaccess")
-                    ? 'direct-access'
-                    : 'relay-access'
-                )
-                : 'no-access'
-            );
             if($this->_['is_action']){
                 try {
                     empty($this->PKG_NAME) 
@@ -2893,9 +2954,9 @@ function index__c(){
                             <div class="col mb-2">
                                 <label class="form-label">Access</label>
                                 <select class="form-control" id="selectPackageAccess">
-                                    <option value="<?=$x='no-access'?>" <?=$this->PKG_ACCESS_TYPE == $x ? 'selected' : ''?>>None</option>
-                                    <option value="<?=$x='relay-access'?>" <?=$this->PKG_ACCESS_TYPE == $x ? 'selected' : ''?>>Relay</option>
-                                    <option value="<?=$x='direct-access'?>" <?=$this->PKG_ACCESS_TYPE == $x ? 'selected' : ''?>>Direct</option>
+                                    <option value="<?=$x='no-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>None</option>
+                                    <option value="<?=$x='relay-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>Relay</option>
+                                    <option value="<?=$x='direct-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>Direct</option>
                                 </select>
                             </div>
                         </div>

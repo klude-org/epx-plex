@@ -201,16 +201,17 @@ function __construct(){
         \is_file($file = \_\PLEX_DIR."/.local-start.php") OR \file_put_contents($file, <<<PHP
         <?php
         namespace {
+            \define('_\PLEX_DIR', \str_replace('\\\\','/',__DIR__));
             if(\is_file(\$f = (\$_SERVER['FW__SITE_DIR'] ??= (empty(\$_SERVER['HTTP_HOST'])
                 ? \str_replace('\\\\','/',\\realpath(\$_SERVER['FW__SITE_DIR'] ?? \getcwd()))
                 : \str_replace('\\\\','/',\\realpath(\dirname(\$_SERVER['SCRIPT_FILENAME'])))
             )).'/.cache-start.php')){
                 return include \$f;
             } else {
-                return include '{$start_dir}/.local-start.php';
+                return include '{$start_dir}/.start.php';
             }
-        }    
-        PHP);    
+        }
+        PHP);
         
     }
     
@@ -1312,7 +1313,7 @@ public function main_window__v(){ $this->canvas_01__v(function(){
                     overflow-y: auto;
 
                     /* keep layout stable even when the scrollbar shows/hides */
-                    scrollbar-gutter: stable both-edges;
+                    scrollbar-gutter: stable;
 
                     /* reserve exact scrollbar width we detect via JS below */
                     padding-inline-start: var(--xui-sbw, 0px);
@@ -1606,10 +1607,24 @@ function pkg_state($state = null){
             'repo'     => $this->GH_REPO_URL ?? trim((string)($_REQUEST['repo'] ?? '')),
             'updated_at' => date(DATE_ATOM),
         ];
-        \is_dir($d = \dirname($file)) OR \mkdir($d, 0777, true);
+        $this->fs_ensure_parent($file);
         \file_put_contents($file, \json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         return \json_decode(\file_get_contents($file), true);
     }
+}
+
+function fs_ensure_dir($d){
+    \is_dir($d)
+        ? true
+        : \mkdir($d, 0777, true)
+    ;
+}
+
+function fs_ensure_parent($path){
+    \is_dir($d = \dirname($path))
+        ? true
+        : \mkdir($d, 0777, true)
+    ;
 }
 
 function fs_delete($d){
@@ -1628,6 +1643,17 @@ function fs_delete($d){
     }
 }
 
+function fs_rename($from, $to){
+    if(!\file_exists($from)){
+        throw new \Exception("Rename: the FROM path does not exist: '{$from}'");
+    }
+    if(\file_exists($to)){
+        throw new \Exception("Rename: the TO path already exist: '{$to}'");
+    }
+    $this->fs_ensure_parent($to);
+    return \rename($from, $to);
+}
+
 function fs_dir_is_empty($dir) {
     if (!is_readable($dir)) return null; // or false
     return count(scandir($dir)) === 2;  // only "." and ".."
@@ -1642,12 +1668,13 @@ function fs_iterator($d){
     );
 }
 
-function fs_create_link(string $target, string $link)
+function fs_create_link(string $target_abs, string $link)
 {
     // Normalize paths
-    $target = rtrim($target, DIRECTORY_SEPARATOR);
+    if(!($target = realpath(rtrim($target_abs, DIRECTORY_SEPARATOR)))){
+        throw new Exception("Target path doesn't exist: $target_abs");
+    }
     $link = rtrim($link, DIRECTORY_SEPARATOR);
-
     // Remove existing link if it exists
     if (file_exists($link) || is_link($link)) {
         if (is_dir($link) && !is_link($link)) {
@@ -1655,6 +1682,7 @@ function fs_create_link(string $target, string $link)
         }
         unlink($link);
     }
+    $this->fs_ensure_parent($link);
 
     // WINDOWS → create a junction
     if (strncasecmp(PHP_OS_FAMILY, 'Windows', 7) === 0) {
@@ -1885,6 +1913,43 @@ function curl($url, $file = null){
     }
 }
 
+function fs_put_indexphp($s_dir, $content){
+    \is_dir($s_dir) OR \mkdir($s_dir, 0777, true);
+    \file_put_contents("{$s_dir}/index.php",$content);    
+}
+
+function fs_put_htaccess($s_dir){
+    \is_dir($s_dir) OR \mkdir($s_dir, 0777, true);
+    \file_put_contents("{$s_dir}/.htaccess", <<<HTACCESS
+    <IfModule mod_rewrite.c>
+    RewriteEngine On
+    #-------------------------------------------------------------------------------
+    #* note: for auto https
+    # RewriteCond %{HTTPS} off 
+    # RewriteCond %{SERVER_PORT} 80
+    # RewriteRule (.*) https://%{SERVER_NAME}%{REQUEST_URI} [L]
+    #-------------------------------------------------------------------------------
+    #* note: if you need www
+    # RewriteCond %{HTTP_HOST} !^www\. [NC]
+    # RewriteRule ^(.*)$ https://www.%{HTTP_HOST}/$1 [R=301,L]
+    #-------------------------------------------------------------------------------
+    #* note: for basic http authorization
+    RewriteCond %{HTTP:Authorization} ^(.+)$
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    #-------------------------------------------------------------------------------
+    #* note: for content type 
+    # RewriteRule .* - [E=HTTP_CONTENT_TYPE:%{HTTP:Content-Type},L]
+    #-------------------------------------------------------------------------------
+    #* note: for pax legacy routing
+    RewriteCond %{REQUEST_URI} !(favicon.ico)|(/.*\-pub[\.\/].*)|(/.*\-asset[\.\/].*)
+    RewriteRule . index.php [L,QSA]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . index.php [L,QSA]
+    </IfModule>
+    HTACCESS);
+}
+
 #endregion
 # ######################################################################################################################
 #region INDEX
@@ -1945,38 +2010,12 @@ function index__c(){
                         $data['linelist'][$k]['start_file'] = $start_file;
                         $data['linelist'][$k]['url'] = $s_url = "{$r_url}{$path}";
                         $data['linelist'][$k]['dir'] = $s_dir = "{$r_dir}{$path}";
-                        \is_dir($s_dir) OR \mkdir($s_dir, 0777, true);
-                        \file_put_contents("{$s_dir}/.htaccess", <<<HTACCESS
-                        <IfModule mod_rewrite.c>
-                        RewriteEngine On
-                        #-------------------------------------------------------------------------------
-                        #* note: for auto https
-                        # RewriteCond %{HTTPS} off 
-                        # RewriteCond %{SERVER_PORT} 80
-                        # RewriteRule (.*) https://%{SERVER_NAME}%{REQUEST_URI} [L]
-                        #-------------------------------------------------------------------------------
-                        #* note: if you need www
-                        # RewriteCond %{HTTP_HOST} !^www\. [NC]
-                        # RewriteRule ^(.*)$ https://www.%{HTTP_HOST}/$1 [R=301,L]
-                        #-------------------------------------------------------------------------------
-                        #* note: for basic http authorization
-                        RewriteCond %{HTTP:Authorization} ^(.+)$
-                        RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-                        #-------------------------------------------------------------------------------
-                        #* note: for content type 
-                        # RewriteRule .* - [E=HTTP_CONTENT_TYPE:%{HTTP:Content-Type},L]
-                        #-------------------------------------------------------------------------------
-                        #* note: for pax legacy routing
-                        RewriteCond %{REQUEST_URI} !(favicon.ico)|(/.*\-pub[\.\/].*)|(/.*\-asset[\.\/].*)
-                        RewriteRule . index.php [L,QSA]
-                        RewriteCond %{REQUEST_FILENAME} !-f
-                        RewriteCond %{REQUEST_FILENAME} !-d
-                        RewriteRule . index.php [L,QSA]
-                        </IfModule>                        
-                        HTACCESS);
-                        \file_put_contents("{$s_dir}/index.php", <<<PHP
-                        <?php \is_callable(\$x = (include "{$start_file}")) AND \$x();
-                        PHP);                        
+                        $this->fs_put_htaccess($s_dir);
+                        $this->fs_put_indexphp($s_dir,<<<PHP
+                        <?php 
+                        \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
+                        \is_callable(\$x = (include "{$start_file}")) AND \$x();
+                        PHP);
                     }
                 }
                 \file_put_contents($access_file, \json_encode($data, JSON_PRETTY_PRINT  | JSON_UNESCAPED_SLASHES));
@@ -2253,8 +2292,8 @@ function index__c(){
                     $_SESSION['--FLASH']['toasts'][] =  "Invalid Directory - {$path}";
                 } else if(!$_REQUEST['junction_name']){
                     $_SESSION['--FLASH']['toasts'][] =  "Name not specified";
-                } else if(\is_dir($junction_dir = ("{$this->PLEX_DIR}/".($junction_name = "pkg~junction~{$_REQUEST['junction_name']}")))){
-                    $_SESSION['--FLASH']['toasts'][] =  "Package juction by that name already exists";
+                } else if(\is_dir($junction_dir = ("{$this->PLEX_DIR}/".($junction_name = "pkg~junction~{$_REQUEST['junction_name']}")."/lib"))){
+                    $_SESSION['--FLASH']['toasts'][] =  "Library junction by that name already exists";
                 } else if(!$this->fs_create_link($path, $junction_dir)){
                     $_SESSION['--FLASH']['toasts'][] =  "System error couldn't create the link";
                 } else {
@@ -2271,7 +2310,7 @@ function index__c(){
                 <div style="max-width: 500px; width: 100%;">
                     <h1 class="fw-semibold text-secondary mb-3">Add a New Junction</h1>
                     <p class="text-muted fs-6 mb-4">
-                    Enter the information for your junction
+                    Enter the absolute path of the target Library
                     </p>
                     <form method="POST" class="w-100">
                         <input type="hidden" name="--csrf" value="<?= htmlspecialchars(\_\CSRF) ?>">
@@ -2325,7 +2364,7 @@ function index__c(){
                     $pkg_dir = $this->PKG_DIR;
                     $pkg_name = $this->PKG_NAME;
                     $backup_dir = \_\PLEX_DIR."/.local/".($backup_name = "pkg~{$pkg_name}-[deleted-".\date('Y-md-Hi-s')."][".uniqid()."]");
-                    if(\is_dir($d = $pkg_dir) && !\rename($d, $backup_dir)){
+                    if(\is_dir($d = $pkg_dir) && !$this->fs_rename($d, $backup_dir)){
                         throw new \Exception("Failed: Unable to modify the '{$pkg_name}' directory - it might be in use!!!");
                     }
                     $this->json_response(true, ['note' => "Backedup at '{$backup_dir}'"]);
@@ -2369,6 +2408,13 @@ function index__c(){
             $this->PKG_NAME = $this->PKG_STUB;
             $this->PKG_INFO = $this->pkg_info();
             $this->PKG_STATE = $this->pkg_state();
+            $this->PKG_ACCESS_TYPE = (\is_file("{$this->PKG_DIR}/index.php")
+                ? (\is_file("{$this->PKG_DIR}/.htaccess")
+                    ? 'direct-access'
+                    : 'relay-access'
+                )
+                : 'no-access'
+            );
             if($this->_['is_action']){
                 try {
                     empty($this->PKG_NAME) 
@@ -2384,6 +2430,27 @@ function index__c(){
                             }
                             $this->json_response(true, ['note' => "Backedup at '{$backup_dir}'"]);
                         } 
+                        
+                        if ($action === 'change_access'){
+                            $indexphp__content = <<<PHP
+                            <?=__FILE__;
+                            PHP;
+                            switch($_REQUEST['access_type'] ?? ''){
+                                case 'no-access' : {
+                                    \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
+                                    \is_file($f = "{$this->PKG_DIR}/index.php") AND unlink($f);
+                                } break;
+                                case 'relay-access':{
+                                    \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
+                                    $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
+                                } break;
+                                case 'direct-access':{
+                                    $this->fs_put_htaccess($this->PKG_DIR);
+                                    $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
+                                } break;
+                            }
+                            $this->json_response(true, ['note' => "Done"]);
+                        }
                         
                         extension_loaded('curl') 
                             OR $this->json_response(false, ['error' => 'PHP cURL extension is required.'], 500)
@@ -2650,7 +2717,7 @@ function index__c(){
                         case 'Yes':
                             console.log('Delete confirmed – do delete here.');
                             await transact('delete');
-                            window.location.replace(window.xui.url.site);
+                            window.location.replace(window.xui.url.site); // so that go-back doesn't work
                             break;
                         case 'No':
                         case null: // closed without explicit choice
@@ -2660,7 +2727,15 @@ function index__c(){
                         }
                     }
                     );
-                });            
+                });
+
+                // Example wiring: delete button
+                $('#selectPackageAccess').on('change', async function () {
+                    await transact('change_access',{access_type:$(this).val()});
+                    //window.location.reload();
+                });
+                
+                
             });
         </script>
     <?php };     
@@ -2672,48 +2747,48 @@ function index__c(){
             }
         </style>
         <?php foreach ($this->PKG_LIST as $k => $v): ?>
-<div class="xui-sidenav-item-card border position-relative p-2">
+            <div class="xui-sidenav-item-card border position-relative p-2">
 
-    <?php if (!empty($v['pkg_tools_url']) || !empty($v['lib_tools_url'])): ?>
-        <div class="dropdown position-absolute top-0 end-0 mt-1 me-1">
-            <button class="btn btn-link btn-sm p-0 text-muted"
-                    type="button"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false">
-                <i class="bi bi-three-dots-vertical"></i>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-                <?php if (!empty($v['pkg_tools_url'])): ?>
-                    <li>
-                        <a class="dropdown-item"
-                           href="<?= htmlspecialchars($v['pkg_tools_url']) ?>">
-                            Package tools
-                        </a>
-                    </li>
+                <?php if (!empty($v['pkg_tools_url']) || !empty($v['lib_tools_url'])): ?>
+                    <div class="dropdown position-absolute top-0 end-0 mt-1 me-1">
+                        <button class="btn btn-link btn-sm p-0 text-muted"
+                                type="button"
+                                data-bs-toggle="dropdown"
+                                aria-expanded="false">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <?php if (!empty($v['pkg_tools_url'])): ?>
+                                <li>
+                                    <a class="dropdown-item"
+                                    href="<?= htmlspecialchars($v['pkg_tools_url']) ?>">
+                                        Package tools
+                                    </a>
+                                </li>
+                            <?php endif; ?>
+                            <?php if (!empty($v['lib_tools_url'])): ?>
+                                <li>
+                                    <a class="dropdown-item"
+                                    href="<?= htmlspecialchars($v['lib_tools_url']) ?>">
+                                        Library tools
+                                    </a>
+                                </li>
+                            <?php endif; ?>
+                        </ul>
+                    </div>
                 <?php endif; ?>
-                <?php if (!empty($v['lib_tools_url'])): ?>
-                    <li>
-                        <a class="dropdown-item"
-                           href="<?= htmlspecialchars($v['lib_tools_url']) ?>">
-                            Library tools
-                        </a>
-                    </li>
-                <?php endif; ?>
-            </ul>
-        </div>
-    <?php endif; ?>
 
-    <a href="<?= $v['pkg_manage_url'] ?>" class="d-block text-decoration-none pe-4">
-        <p class="xui-sidenav-title mb-0">
-            <?= htmlspecialchars($v['disp']); ?>
-        </p>
-        <p class="xui-sidenav-desc mb-0"
-           title="<?= htmlspecialchars($v['desc'] ?? '', ENT_QUOTES); ?>">
-            <?= htmlspecialchars($v['desc'] ?? ''); ?>
-        </p>
-    </a>
+                <a href="<?= $v['pkg_manage_url'] ?>" class="d-block text-decoration-none pe-4">
+                    <p class="xui-sidenav-title mb-0">
+                        <?= htmlspecialchars($v['disp']); ?>
+                    </p>
+                    <p class="xui-sidenav-desc mb-0"
+                    title="<?= htmlspecialchars($v['desc'] ?? '', ENT_QUOTES); ?>">
+                        <?= htmlspecialchars($v['desc'] ?? ''); ?>
+                    </p>
+                </a>
 
-</div>
+            </div>
         <?php endforeach; ?>
         <script>
             $(function () {
@@ -2810,6 +2885,16 @@ function index__c(){
                                         Update
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col mb-2">
+                                <label class="form-label">Access</label>
+                                <select class="form-control" id="selectPackageAccess">
+                                    <option value="<?=$x='no-access'?>" <?=$this->PKG_ACCESS_TYPE == $x ? 'selected' : ''?>>None</option>
+                                    <option value="<?=$x='relay-access'?>" <?=$this->PKG_ACCESS_TYPE == $x ? 'selected' : ''?>>Relay</option>
+                                    <option value="<?=$x='direct-access'?>" <?=$this->PKG_ACCESS_TYPE == $x ? 'selected' : ''?>>Direct</option>
+                                </select>
                             </div>
                         </div>
                         <div class="row">
@@ -2911,11 +2996,11 @@ function index__c(){
                     return el ? el.value.trim() : '';
                 }
                 
-                function list_refs(){
+                function list_refs(initial = 0){
                     if(0){
                         return list_refs__here();
                     } else {
-                        return list_refs__backend();
+                        return list_refs__backend(initial);
                     }
                 }
                 

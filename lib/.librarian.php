@@ -1956,6 +1956,34 @@ function pkg__access_type(){
     );
 }
 
+function task__change_access(){
+    $start_file = \_\START_DIR.'/.launch.php';
+    $app_file = $this->PKG_DIR.'/lib/app/.app.php';
+    $inst_dir = $this->PKG_DIR;
+    $indexphp__content = <<<PHP
+    <?php 
+    \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
+    \defined('_\INST_DIR') OR \define('_\INST_DIR', '{$inst_dir}');
+    \defined('_\APP_FILE') OR \define('_\APP_FILE', '{$app_file}');
+    \is_callable(\$x = (include "{$start_file}")) AND \$x();
+    PHP;
+    switch($_REQUEST['access_type'] ?? ''){
+        case 'no-access' : {
+            \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
+            \is_file($f = "{$this->PKG_DIR}/index.php") AND unlink($f);
+        } break;
+        case 'relay-access':{
+            \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
+            $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
+        } break;
+        case 'direct-access':{
+            $this->fs_put_htaccess($this->PKG_DIR);
+            $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
+        } break;
+    }
+    $this->json_response(true, ['note' => "Done"]);
+}
+
 #endregion
 # ######################################################################################################################
 #region INDEX
@@ -2194,9 +2222,6 @@ function index__c(){
                                 : $m.' ('.\substr($n,5,-4).') | '.$vr
                             );
                         }
-                        foreach(\glob("{$v['dir']}/index.php", GLOB_BRACE) as $f){
-                            $starts[$f] = 'INST | '.$vr;
-                        }
                     }
                     $list = [
                         ['id' => '', 'text'=>'--Select Start--']
@@ -2402,27 +2427,7 @@ function index__c(){
                 }
                 
                 if ($action === 'change_access'){
-                    $indexphp__content = <<<PHP
-                    <?php 
-                    \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \str_replace('\\\\','/', \dirname(__DIR__)));
-                    \defined('_\INST_DIR') OR \define('_\INST_DIR', \str_replace('\\\\','/', __DIR__));
-                    return include __DIR__.'/lib/app/.start.php';
-                    PHP;
-                    switch($_REQUEST['access_type'] ?? ''){
-                        case 'no-access' : {
-                            \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
-                            \is_file($f = "{$this->PKG_DIR}/index.php") AND unlink($f);
-                        } break;
-                        case 'relay-access':{
-                            \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
-                            $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
-                        } break;
-                        case 'direct-access':{
-                            $this->fs_put_htaccess($this->PKG_DIR);
-                            $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
-                        } break;
-                    }
-                    $this->json_response(true, ['note' => "Done"]);
+                    $this->task__change_access();
                 }
                 
                 \header("Location: {$_SERVER['REQUEST_URI']}");
@@ -2439,6 +2444,7 @@ function index__c(){
                         </p>
                     </div>
                     <div class="row">
+                        <?php if(\is_file($this->PKG_DIR.'/lib/app/.app.php')): ?>
                         <div class="col">
                             <select class="form-control" id="selectPackageAccess">
                                 <option value="<?=$x='no-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>None</option>
@@ -2446,6 +2452,7 @@ function index__c(){
                                 <option value="<?=$x='direct-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>Direct</option>
                             </select>
                         </div>
+                        <?php endif ?>
                         <div class="col">
                             <button type="button" class="btn btn-outline-danger" id="btnDeletePackage">
                                 Remove
@@ -2492,27 +2499,7 @@ function index__c(){
                         } 
                         
                         if ($action === 'change_access'){
-                            $indexphp__content = <<<PHP
-                            <?php 
-                            \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \str_replace('\\\\','/', \dirname(__DIR__)));
-                            \defined('_\INST_DIR') OR \define('_\INST_DIR', \str_replace('\\\\','/', __DIR__));
-                            return include __DIR__.'/lib/app/.start.php';
-                            PHP;
-                            switch($_REQUEST['access_type'] ?? ''){
-                                case 'no-access' : {
-                                    \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
-                                    \is_file($f = "{$this->PKG_DIR}/index.php") AND unlink($f);
-                                } break;
-                                case 'relay-access':{
-                                    \is_file($f = "{$this->PKG_DIR}/.htaccess") AND unlink($f);
-                                    $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
-                                } break;
-                                case 'direct-access':{
-                                    $this->fs_put_htaccess($this->PKG_DIR);
-                                    $this->fs_put_indexphp($this->PKG_DIR,$indexphp__content);
-                                } break;
-                            }
-                            $this->json_response(true, ['note' => "Done"]);
+                            $this->task__change_access();
                         }
                         
                         extension_loaded('curl') 
@@ -2689,9 +2676,9 @@ function index__c(){
                     \is_file("{$d}/index.php")
                     && \is_file("{$d}/.htaccess")
                 ){
-                    $pkg_tools_url = "{$this->_['base_url']}/{$pkey}";
+                    $go_url = "{$this->_['base_url']}/{$pkey}";
                 } else {
-                    $pkg_tools_url = false;
+                    $go_url = false;
                 }
                 if(
                     \is_file("{$d}/lib/index.php")
@@ -2713,7 +2700,7 @@ function index__c(){
                     'gh_url' => ($owner != 'junction') ? "https://github.com/{$owner}/{$repo}" : null,
                     'pkg_manage_url' => "{$this->_['base_url']}/package/{$path}",
                     'lib_tools_url' => $lib_tools_url,
-                    'pkg_tools_url' => $pkg_tools_url,
+                    'go_url' => $go_url,
                 ];
             }
         }
@@ -2812,7 +2799,7 @@ function index__c(){
         <?php foreach ($this->PKG_LIST as $k => $v): ?>
             <div class="xui-sidenav-item-card border position-relative p-2">
 
-                <?php if (!empty($v['pkg_tools_url']) || !empty($v['lib_tools_url'])): ?>
+                <?php if (!empty($v['go_url']) || !empty($v['lib_tools_url'])): ?>
                     <div class="dropdown position-absolute top-0 end-0 mt-1 me-1">
                         <button class="btn btn-link btn-sm p-0 text-muted"
                                 type="button"
@@ -2821,11 +2808,11 @@ function index__c(){
                             <i class="bi bi-three-dots-vertical"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end">
-                            <?php if (!empty($v['pkg_tools_url'])): ?>
+                            <?php if (!empty($v['go_url'])): ?>
                                 <li>
                                     <a class="dropdown-item"
-                                    href="<?= htmlspecialchars($v['pkg_tools_url']) ?>">
-                                        Package tools
+                                    href="<?= htmlspecialchars($v['go_url']) ?>">
+                                        Go
                                     </a>
                                 </li>
                             <?php endif; ?>
@@ -2950,6 +2937,7 @@ function index__c(){
                                 </div>
                             </div>
                         </div>
+                        <?php if(\is_file($this->PKG_DIR.'/lib/app/.app.php')): ?>
                         <div class="row">
                             <div class="col mb-2">
                                 <label class="form-label">Access</label>
@@ -2960,6 +2948,7 @@ function index__c(){
                                 </select>
                             </div>
                         </div>
+                        <?php endif ?>
                         <div class="row">
                             <div class="col"></div>
                             <div class="col-auto">

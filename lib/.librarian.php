@@ -185,35 +185,31 @@ function __construct(){
         })();
     }
     
-    if(\basename(\_\PLEX_DIR) == '--epx'){
-        
-        \is_file($file = \_\PLEX_DIR."/.local-http-root.php") OR \file_put_contents($file, <<<PHP
-        <?php
-        //return;
-        \$root_dir ??= "{$this->_['root_dir']}";
-        \$root_url ??= "{$this->_['root_url']}";
-        \$_ENV["DB_HOSTNAME"] ??= "localhost"; 
-        \$_ENV["DB_USERNAME"] ??= "root"; 
-        \$_ENV["DB_PASSWORD"] ??= "pass"; 
-        PHP);    
-        
-        $start_dir = \_\START_DIR;
-        \is_file($file = \_\PLEX_DIR."/.local-start.php") OR \file_put_contents($file, <<<PHP
-        <?php
-        namespace {
-            \define('_\PLEX_DIR', \str_replace('\\\\','/',__DIR__));
-            if(\is_file(\$f = (\$_SERVER['FW__SITE_DIR'] ??= (empty(\$_SERVER['HTTP_HOST'])
-                ? \str_replace('\\\\','/',\\realpath(\$_SERVER['FW__SITE_DIR'] ?? \getcwd()))
-                : \str_replace('\\\\','/',\\realpath(\dirname(\$_SERVER['SCRIPT_FILENAME'])))
-            )).'/.cache-start.php')){
-                return include \$f;
-            } else {
-                return include '{$start_dir}/.start.php';
-            }
+    \is_file($file = \_\PLEX_DIR."/.local-http-root.php") OR \file_put_contents($file, <<<PHP
+    <?php
+    //return;
+    \$root_dir ??= "{$this->_['root_dir']}";
+    \$root_url ??= "{$this->_['root_url']}";
+    \$_ENV["DB_HOSTNAME"] ??= "localhost"; 
+    \$_ENV["DB_USERNAME"] ??= "root"; 
+    \$_ENV["DB_PASSWORD"] ??= "pass"; 
+    PHP);
+    
+    $app_dir = \_\START_DIR.'/app';
+    \is_file($file = \_\PLEX_DIR."/.local-start.php") OR \file_put_contents($file, <<<PHP
+    <?php
+    namespace {
+        \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \str_replace('\\\\','/',__DIR__));
+        if(\is_file(\$f = (\$_SERVER['FW__SITE_DIR'] ??= (empty(\$_SERVER['HTTP_HOST'])
+            ? \str_replace('\\\\','/',\\realpath(\$_SERVER['FW__SITE_DIR'] ?? \getcwd()))
+            : \str_replace('\\\\','/',\\realpath(\dirname(\$_SERVER['SCRIPT_FILENAME'])))
+        )).'/.cache-start.php')){
+            return include \$f;
+        } else {
+            return include '{$app_dir}/.start.php';
         }
-        PHP);
-        
     }
+    PHP);
     
     \is_file($file = \_\PLEX_DIR."/.local-config.php") OR \file_put_contents($file, <<<PHP
     <?php
@@ -2013,7 +2009,7 @@ function index__c(){
                         $this->fs_put_htaccess($s_dir);
                         $this->fs_put_indexphp($s_dir,<<<PHP
                         <?php 
-                        \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
+                        \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
                         \is_callable(\$x = (include "{$start_file}")) AND \$x();
                         PHP);
                     }
@@ -2070,7 +2066,7 @@ function index__c(){
                     function createRow(kkey = null, value = {path:'',lib:''}) {
                         const key = kkey ?? makeKey();
                         const path = value.path;
-                        const start_at = value.start_at;
+                        const start_at = value.start_at ?? '';
                         const url = value.url ?? 'javascript:void()';
 
                         const row = document.createElement('div');
@@ -2161,10 +2157,13 @@ function index__c(){
                         foreach(\glob("{$dl}/{*/,}.start{-*,}.php", GLOB_BRACE) as $f){
                             //Todo: simplify using preg_match
                             $m = (($dx = \dirname($f)) == $dl) ? '[L]' : \basename($dx);
-                            $starts["{$f}"] = (($n = \basename($f)) == '.start.php')
+                            $starts[$f] = 'START | '.((($n = \basename($f)) == '.start.php')
                                 ? $m.' | '.$vr
                                 : $m.' ('.\substr($n,7,-4).') | '.$vr
-                            ;
+                            );
+                        }
+                        foreach(\glob("{$v['dir']}/index.php", GLOB_BRACE) as $f){
+                            $starts[$f] = 'INST | '.$vr;
                         }
                     }
                     $list = [
@@ -2433,7 +2432,10 @@ function index__c(){
                         
                         if ($action === 'change_access'){
                             $indexphp__content = <<<PHP
-                            <?=__FILE__;
+                            <?php 
+                            \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \str_replace('\\\\','/', \dirname(__DIR__)));
+                            \defined('_\INST_DIR') OR \define('_\INST_DIR', \str_replace('\\\\','/', __DIR__));
+                            return include __DIR__.'/lib/app/.start.php';
                             PHP;
                             switch($_REQUEST['access_type'] ?? ''){
                                 case 'no-access' : {
@@ -2709,23 +2711,23 @@ function index__c(){
                 // Example wiring: delete button
                 document.getElementById('btnDeletePackage')?.addEventListener('click', function () {
                     window.xui.modal.prompt(
-                    'Are you sure you want to delete this package?',
-                    'Delete Confirmation',
-                    ['Yes', 'No'],
-                    async function (choice) {
-                        switch (choice) {
-                        case 'Yes':
-                            console.log('Delete confirmed – do delete here.');
-                            await transact('delete');
-                            window.location.replace(window.xui.url.site); // so that go-back doesn't work
-                            break;
-                        case 'No':
-                        case null: // closed without explicit choice
-                        default:
-                            console.log('Delete cancelled.');
-                            break;
+                        'Are you sure you want to delete this package?',
+                        'Delete Confirmation',
+                        ['Yes', 'No'],
+                        async function (choice) {
+                            switch (choice) {
+                            case 'Yes':
+                                console.log('Delete confirmed – do delete here.');
+                                await transact('delete');
+                                window.location.replace(window.xui.url.site); // so that go-back doesn't work
+                                break;
+                            case 'No':
+                            case null: // closed without explicit choice
+                            default:
+                                console.log('Delete cancelled.');
+                                break;
+                            }
                         }
-                    }
                     );
                 });
 

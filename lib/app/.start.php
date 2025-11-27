@@ -28,7 +28,7 @@ namespace { ( function(){
                 : $_SERVER['HTTP_X_REQUEST_INTERFACE'] ?? 'web'
             )
         ;        
-        $this->php_tsp_defaults = [
+        $this->php_tsp_defaults = \defined('_\PHP_TSP_DEFAULTS') ? _\PHP_TSP_DEFAULTS : [
             'handler' => 'spl_autoload',
             'extensions' => \spl_autoload_extensions(),
             'path' =>  \get_include_path(),

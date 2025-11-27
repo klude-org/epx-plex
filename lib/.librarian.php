@@ -2,11 +2,11 @@
 ########################################################################################################################
 #region
     /* 
-                                               EPX-ALPHA-START 
+                                               EPX-PLEX-LIBRARIAN
     PROVIDER : KLUDE PTY LTD
-    PACKAGE  : EPX-ALPHA
+    PACKAGE  : EPX-PLEX
     AUTHOR   : BRIAN PINTO
-    RELEASED : 2025-11-21
+    RELEASED : 2025-11-27
     
     Copyright (c) 2017-2025 Klude Pty Ltd. https://klude.com.au
 
@@ -52,6 +52,7 @@ function __construct(){
     \define('_\START_FILE', \str_replace('\\','/', __FILE__));
     \define('_\START_DIR', \dirname(\_\START_FILE));
     \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \dirname(\_\START_DIR, 2));
+    \defined('_\PLIB_DIR') OR \define('_\PLIB_DIR', \_\START_DIR);
     \define('_\IS_CLI', empty($_SERVER['HTTP_HOST']));
     \define('_\APP_DIR', \is_dir($d = $GLOBALS['_']['APP_DIR'] ?? '') ? \str_replace('\\','/', $d) : \_\START_DIR);
     \define('_\OB_OUT', \ob_get_level());
@@ -62,6 +63,8 @@ function __construct(){
         'extensions' => \spl_autoload_extensions(),
         'path' =>  \get_include_path(),
     ]);
+    $this->PLEX_DIR = \_\PLEX_DIR;
+    $this->PLIB_DIR = \_\PLIB_DIR;
     $this->_['site_dir'] = (\_\IS_CLI
         ? \str_replace('\\','/',\realpath($_SERVER['.']['site_dir'] ?? \getcwd()))
         : \str_replace('\\','/',\realpath(\dirname($_SERVER['SCRIPT_FILENAME'])))
@@ -195,7 +198,8 @@ function __construct(){
     \$_ENV["DB_PASSWORD"] ??= "pass"; 
     PHP);
     
-    $app_dir = \_\START_DIR.'/app';
+    $app_dir = $this->PLIB_DIR.'/app';
+    $my_dir = $this->PLIB_DIR;
     \is_file($file = \_\PLEX_DIR."/.local-start.php") OR \file_put_contents($file, <<<PHP
     <?php
     namespace {
@@ -1561,7 +1565,7 @@ function clear(){
     \ob_start();
 }
 
-function sanitize_instance_name(string $name): string { return preg_replace('/[^A-Za-z0-9._-]/', '', $name); }
+function sanitize_variant_name(string $name): string { return preg_replace('/[^A-Za-z0-9._-]/', '', $name); }
 
 function is_valid_pkg_dir(string $path): bool { return is_dir($path) && is_readable($path); }
 
@@ -1956,16 +1960,15 @@ function pkg__access_type(){
     );
 }
 
-function task__change_access(){
-    $start_file = \_\START_DIR.'/.launch.php';
+function task__install_access(){
+    $start_file = $this->PLIB_DIR.'/applet/launch.php';
     $app_file = $this->PKG_DIR.'/lib/app/.app.php';
     $inst_dir = $this->PKG_DIR;
     $indexphp__content = <<<PHP
     <?php 
-    \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
-    \defined('_\INST_DIR') OR \define('_\INST_DIR', '{$inst_dir}');
-    \defined('_\APP_FILE') OR \define('_\APP_FILE', '{$app_file}');
-    \is_callable(\$x = (include "{$start_file}")) AND \$x();
+    \$_SERVER['_']['PLEX_DIR'] ??= '{$this->PLEX_DIR}';
+    \$_SERVER['_']['APP_FILE'] ??= '{$app_file}';
+    include '{$start_file}';
     PHP;
     switch($_REQUEST['access_type'] ?? ''){
         case 'no-access' : {
@@ -1984,13 +1987,32 @@ function task__change_access(){
     $this->json_response(true, ['note' => "Done"]);
 }
 
+function task__install_start($s_dir, $start_file){
+    $this->fs_put_htaccess($s_dir);
+    $this->fs_put_indexphp($s_dir,<<<PHP
+    <?php 
+    \$_SERVER['_']['PLEX_DIR'] ??= '{$this->PLEX_DIR}';
+    \is_callable(\$x = (include "{$start_file}")) AND \$x();
+    PHP);
+}
+
+function task__install_app($s_dir, $app_file){
+    $start_file = $this->PLIB_DIR.'/applet/launch.php';
+    $this->fs_put_htaccess($s_dir);
+    $this->fs_put_indexphp($s_dir,<<<PHP
+    <?php 
+    \$_SERVER['_']['PLEX_DIR'] ??= '{$this->PLEX_DIR}';
+    \$_SERVER['_']['APP_FILE'] ??= '{$app_file}';
+    include '{$start_file}';
+    PHP);
+}
+
 #endregion
 # ######################################################################################################################
 #region INDEX
 function index__c(){
-    $this->PLEX_DIR = \_\PLEX_DIR;
     $this->GH_TOKEN = trim((string)($_REQUEST['token'] ?? null ?: $_ENV[\_\api::class]['github.com']['token'] ?? ''));
-    $this->PKG_INSTANCE = null;
+    $this->PKG_VARIANT = null;
     $this->GH_REPO = null;
     $this->GH_OWNER = null;    
     $rurp = $this->_['rurp'];
@@ -2042,27 +2064,13 @@ function index__c(){
                         $data['linelist'][$k]['url'] = $s_url = "{$r_url}{$path}";
                         $data['linelist'][$k]['dir'] = $s_dir = "{$r_dir}{$path}";
                         if(\basename($start_at) == '.app.php'){
-                            $start_file = \_\START_DIR.'/.launch.php';
                             $data['linelist'][$k]['app_file'] = $app_file = $start_at;
                             $data['linelist'][$k]['inst_dir'] = $inst_dir = \dirname($start_at,3);
-                            $data['linelist'][$k]['start_file'] = $start_file;
-                            $this->fs_put_htaccess($s_dir);
-                            $this->fs_put_indexphp($s_dir,<<<PHP
-                            <?php 
-                            \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
-                            \defined('_\INST_DIR') OR \define('_\INST_DIR', '{$inst_dir}');
-                            \defined('_\APP_FILE') OR \define('_\APP_FILE', '{$app_file}');
-                            \is_callable(\$x = (include "{$start_file}")) AND \$x();
-                            PHP);
+                            $this->task__install_app($s_dir, $app_file);
                         } else {
                             $start_file = \str_replace('\\','/', \realpath($start_at));
                             $data['linelist'][$k]['start_file'] = $start_file;
-                            $this->fs_put_htaccess($s_dir);
-                            $this->fs_put_indexphp($s_dir,<<<PHP
-                            <?php 
-                            \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', '{$this->PLEX_DIR}');
-                            \is_callable(\$x = (include "{$start_file}")) AND \$x();
-                            PHP);
+                            $this->task__install_start($s_dir, $start_file);
                         }
                     }
                 }
@@ -2283,7 +2291,7 @@ function index__c(){
                 </div>
             </div>
         <?php };
-    } else if($rurp == '/new_instance'){
+    } else if($rurp == '/new_variant'){
         if($this->_['is_action']){
             if(($action = $this->_['action']) === 'new'){
                 [$this->GH_OWNER, $this->GH_REPO] = $this->gh__parse_segments($_REQUEST['url']);
@@ -2294,14 +2302,14 @@ function index__c(){
                     && (!$ok || $status !== 200)
                 ){
                     $_SESSION['--FLASH']['toasts'][] =  "Invalid Repository, GitHub Response - {$status}";
-                } else if(!($this->PKG_INSTANCE = $this->sanitize_instance_name($_REQUEST['instance_name']))){
-                    $_SESSION['--FLASH']['toasts'][] =  'Invalid Instance Name';
-                } else if(\is_dir($d = "{$this->PLEX_DIR}/pkg~{$this->GH_OWNER}~{$this->GH_REPO}~{$this->PKG_INSTANCE}")){
-                    $_SESSION['--FLASH']['toasts'][] =  "Instance already exists";
+                } else if(!($this->PKG_VARIANT = $this->sanitize_variant_name($_REQUEST['variant_name']))){
+                    $_SESSION['--FLASH']['toasts'][] =  'Invalid Variant Name';
+                } else if(\is_dir($d = "{$this->PLEX_DIR}/pkg~{$this->GH_OWNER}~{$this->GH_REPO}~{$this->PKG_VARIANT}")){
+                    $_SESSION['--FLASH']['toasts'][] =  "Variant already exists";
                 } else if(!\mkdir($d, 0777,true)){
                     $_SESSION['--FLASH']['toasts'][] =  "Unable to create directory - System Error";
                 } else {
-                    \header("Location: {$this->_['site_url']}/package/{$this->GH_OWNER}/{$this->GH_REPO}/{$this->PKG_INSTANCE}");
+                    \header("Location: {$this->_['site_url']}/package/{$this->GH_OWNER}/{$this->GH_REPO}/{$this->PKG_VARIANT}");
                     exit();
                 }
             }
@@ -2311,9 +2319,9 @@ function index__c(){
         $this->vars['xui/main/content'] ??= function(){ ?>
             <div class="container-fluid d-flex flex-column justify-content-center align-items-center text-center min-vh-100">
                 <div style="max-width: 500px; width: 100%;">
-                    <h1 class="fw-semibold text-secondary mb-3">Add a New Instance</h1>
+                    <h1 class="fw-semibold text-secondary mb-3">Add a New Variant</h1>
                     <p class="text-muted fs-6 mb-4">
-                    Enter a name for your instance
+                    Enter a name for your variant
                     </p>
                     <form method="POST" class="w-100">
                         <input type="hidden" name="--csrf" value="<?= htmlspecialchars(\_\CSRF) ?>">
@@ -2329,10 +2337,10 @@ function index__c(){
                             >
                             <input 
                             type="text" 
-                            name="instance_name"
+                            name="variant_name"
                             class="form-control" 
-                            placeholder="instance" 
-                            aria-label="Instance Name"
+                            placeholder="variant" 
+                            aria-label="Variant Name"
                             required
                             >
                             <button class="btn btn-primary" type="submit">Add</button>
@@ -2341,19 +2349,19 @@ function index__c(){
                 </div>
             </div>
         <?php };
-    } else if($rurp == '/new_junction'){
+    } else if($rurp == '/new_synth'){
         if($this->_['is_action']){
             if(($action = $this->_['action']) === 'new'){
                 if(!\is_dir($path = $_REQUEST['path'])){
                     $_SESSION['--FLASH']['toasts'][] =  "Invalid Directory - {$path}";
-                } else if(!$_REQUEST['junction_name']){
+                } else if(!$_REQUEST['synth_name']){
                     $_SESSION['--FLASH']['toasts'][] =  "Name not specified";
-                } else if(\is_dir($junction_dir = ("{$this->PLEX_DIR}/".($junction_name = "pkg~junction~{$_REQUEST['junction_name']}")."/lib"))){
-                    $_SESSION['--FLASH']['toasts'][] =  "Library junction by that name already exists";
-                } else if(!$this->fs_create_link($path, $junction_dir)){
+                } else if(\is_dir($synth_dir = ("{$this->PLEX_DIR}/".($synth_name = "pkg~synth~{$_REQUEST['synth_name']}")."/lib"))){
+                    $_SESSION['--FLASH']['toasts'][] =  "Library synth by that name already exists";
+                } else if(!$this->fs_create_link($path, $synth_dir)){
                     $_SESSION['--FLASH']['toasts'][] =  "System error couldn't create the link";
                 } else {
-                    $j = \str_replace('~','/',\substr($junction_name,4));
+                    $j = \str_replace('~','/',\substr($synth_name,4));
                     \header("Location: {$this->_['site_url']}/package/{$j}");
                     exit();
                 }
@@ -2364,7 +2372,7 @@ function index__c(){
         $this->vars['xui/main/content'] ??= function(){ ?>
             <div class="container-fluid d-flex flex-column justify-content-center align-items-center text-center min-vh-100">
                 <div style="max-width: 500px; width: 100%;">
-                    <h1 class="fw-semibold text-secondary mb-3">Add a New Junction</h1>
+                    <h1 class="fw-semibold text-secondary mb-3">Add a New Synth</h1>
                     <p class="text-muted fs-6 mb-4">
                     Enter the absolute path of the target Library
                     </p>
@@ -2382,10 +2390,10 @@ function index__c(){
                             >
                             <input 
                             type="text" 
-                            name="junction_name"
+                            name="synth_name"
                             class="form-control" 
                             placeholder="name" 
-                            aria-label="Instance Name"
+                            aria-label="Variant Name"
                             required
                             >
                             <button class="btn btn-primary" type="submit">Add</button>
@@ -2398,8 +2406,8 @@ function index__c(){
         \strtok($rurp,'/');
         $rurp = \strtok('');
         if(
-            ([$this->GH_OWNER, $this->GH_REPO, $this->PKG_INSTANCE] = [\strtok($rurp,'/'), \strtok('/'), \strtok('/')])
-            && !\is_dir($this->PKG_DIR = "{$this->PLEX_DIR}/pkg~{$this->GH_OWNER}~{$this->GH_REPO}".($this->PKG_INSTANCE ? "~{$this->PKG_INSTANCE}" : ''))
+            ([$this->GH_OWNER, $this->GH_REPO, $this->PKG_VARIANT] = [\strtok($rurp,'/'), \strtok('/'), \strtok('/')])
+            && !\is_dir($this->PKG_DIR = "{$this->PLEX_DIR}/pkg~{$this->GH_OWNER}~{$this->GH_REPO}".($this->PKG_VARIANT ? "~{$this->PKG_VARIANT}" : ''))
         ){
             $this->vars['xui/main/content'] ??= function(){ ?>
                 <div class="container d-flex flex-column justify-content-center align-items-center text-center min-vh-100">
@@ -2412,10 +2420,10 @@ function index__c(){
                     </div>
                 </div>
             <?php };
-        } else if($this->GH_OWNER == 'junction') {
+        } else if($this->GH_OWNER == 'synth') {
             if($action = $this->_['action']){
                 if($action === 'delete') {
-                    $this->PKG_STUB = "{$this->GH_OWNER}~{$this->GH_REPO}".($this->PKG_INSTANCE ? "~{$this->PKG_INSTANCE}" : '');
+                    $this->PKG_STUB = "{$this->GH_OWNER}~{$this->GH_REPO}".($this->PKG_VARIANT ? "~{$this->PKG_VARIANT}" : '');
                     $this->PKG_NAME = $this->PKG_STUB;
                     $pkg_dir = $this->PKG_DIR;
                     $pkg_name = $this->PKG_NAME;
@@ -2427,7 +2435,7 @@ function index__c(){
                 }
                 
                 if ($action === 'change_access'){
-                    $this->task__change_access();
+                    $this->task__install_access();
                 }
                 
                 \header("Location: {$_SERVER['REQUEST_URI']}");
@@ -2437,10 +2445,10 @@ function index__c(){
             $this->vars['xui/main/content'] ??= function(){ ?>
                 <div class="container d-flex flex-column justify-content-center align-items-center text-center min-vh-100">
                     <div>
-                        <h1 class="fw-semibold  mb-2"><i class="bi bi-exclamation-triangle-fill text-danger fs-2 mb-3"></i> Junction</h1>
+                        <h1 class="fw-semibold  mb-2"><i class="bi bi-exclamation-triangle-fill text-danger fs-2 mb-3"></i> Synth</h1>
                         <p class="text-muted fs-6">
-                        The package you’re trying to access is a junction and must be managed manually.<br>
-                        If  you need to remove the junction you can do so by clicking the 'Remove' button.
+                        The package you’re trying to access is a synth and must be managed manually.<br>
+                        If  you need to remove the synth you can do so by clicking the 'Remove' button.
                         </p>
                     </div>
                     <div class="row">
@@ -2478,7 +2486,7 @@ function index__c(){
             <?php };
         } else {
             $this->GH_REPO_URL = "https://github.com/{$this->GH_OWNER}/{$this->GH_REPO}.git";
-            $this->PKG_STUB = "{$this->GH_OWNER}~{$this->GH_REPO}".($this->PKG_INSTANCE ? "~{$this->PKG_INSTANCE}" : '');
+            $this->PKG_STUB = "{$this->GH_OWNER}~{$this->GH_REPO}".($this->PKG_VARIANT ? "~{$this->PKG_VARIANT}" : '');
             $this->PKG_NAME = $this->PKG_STUB;
             $this->PKG_INFO = $this->pkg_info();
             $this->PKG_STATE = $this->pkg_state();
@@ -2499,7 +2507,7 @@ function index__c(){
                         } 
                         
                         if ($action === 'change_access'){
-                            $this->task__change_access();
+                            $this->task__install_access();
                         }
                         
                         extension_loaded('curl') 
@@ -2655,10 +2663,10 @@ function index__c(){
         foreach(\glob("{$this->PLEX_DIR}/*", GLOB_ONLYDIR) as $d){
             $d = \str_replace('\\','/', $d);
             $pkey = \basename($d);
-            if(\preg_match('#^pkg~([\w\-\.]+)~([\w\-\.]+)(?:~([\w\-\.]+))?$#', $pkey, $m)){
+            if(\preg_match('#^pkg~([\w\-\.]+)~([\w\-\.]+)(?:~(.+))?$#', $pkey, $m)){
                 $owner = $m[1];
                 $repo = $m[2];
-                $instance = $m[3] ?? null;
+                $variant = $m[3] ?? null;
                 
                 $desc = "{$owner}/{$repo}";
                 if(is_file($f = "{$d}/lib/.info.txt")){
@@ -2691,13 +2699,13 @@ function index__c(){
                 yield $pkey => [
                     'owner' => $owner,
                     'repo' => $repo,
-                    'path' => $path = "{$owner}/{$repo}".($instance ? "/{$instance}" : ''),
-                    'name' => $instance ? "{$instance} ({$repo})" : "{$repo}",
-                    'disp' => $instance ?: $repo,
+                    'path' => $path = "{$owner}/{$repo}".($variant ? "/{$variant}" : ''),
+                    'name' => $variant ? "{$repo} ({$variant})" : "{$repo}",
+                    'disp' => $variant ? "{$repo} ({$variant})" : "{$repo}",
                     'desc' => $desc,
                     'dir' => $d,
                     'lib_dir' => "{$d}/lib",
-                    'gh_url' => ($owner != 'junction') ? "https://github.com/{$owner}/{$repo}" : null,
+                    'gh_url' => ($owner != 'synth') ? "https://github.com/{$owner}/{$repo}" : null,
                     'pkg_manage_url' => "{$this->_['base_url']}/package/{$path}",
                     'lib_tools_url' => $lib_tools_url,
                     'go_url' => $go_url,
@@ -2707,7 +2715,7 @@ function index__c(){
     })());
     
     $this->vars['ui/page/tab/title'] = $this->PKG_NAME ?? '';
-    $this->vars['ui/page/title'] = $this->PKG_INSTANCE ? "{$this->PKG_INSTANCE} ({$this->GH_REPO})" : "{$this->GH_REPO}";
+    $this->vars['ui/page/title'] = $this->PKG_VARIANT ? "{$this->GH_REPO} ({$this->PKG_VARIANT})" : "{$this->GH_REPO}";
     $this->vars['ui/page/subtitle'] = $this->PKG_INFO ?? '';
     $this->vars['xui/sidebar_header/content'] = function(){ ?>
         <div class="d-flex align-items-center gap-2">
@@ -2721,8 +2729,8 @@ function index__c(){
             </button>
             <ul class="dropdown-menu">
                 <li><a class="dropdown-item" href="<?=$this->_['base_url']?>/new_library">Add Library</a></li>
-                <li><a class="dropdown-item" href="<?=$this->_['base_url']?>/new_instance">Add Instance</a></li>
-                <li><a class="dropdown-item" href="<?=$this->_['base_url']?>/new_junction">Add Junction</a></li>
+                <li><a class="dropdown-item" href="<?=$this->_['base_url']?>/new_variant">Add Variant</a></li>
+                <li><a class="dropdown-item" href="<?=$this->_['base_url']?>/new_synth">Add Synth</a></li>
                 <li><a class="dropdown-item" href="<?=$this->_['base_url']?>/manage_access">Manage Access</a></li>
             </ul>
         </div>        

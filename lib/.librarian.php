@@ -2307,7 +2307,7 @@ function index__c(){
                 if(!$this->GH_OWNER || !$this->GH_REPO){
                     $_SESSION['--FLASH']['toasts'][] =  'Invalid URL';
                 } else if(
-                    ([$ok, $status] = $this->curl_head("https://github.com/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
+                    ([$ok, $status] = $this->curl_head("https://api.github.com/repos/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
                     && (!$ok || $status !== 200)
                 ){
                     $_SESSION['--FLASH']['toasts'][] =  "Invalid Repository, GitHub Response - {$status}";
@@ -2355,7 +2355,7 @@ function index__c(){
                 if(!$this->GH_OWNER || !$this->GH_REPO){
                     $_SESSION['--FLASH']['toasts'][] =  'Invalid URL';
                 } else if(
-                    ([$ok, $status] = $this->curl_head("https://github.com/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
+                    ([$ok, $status] = $this->curl_head("https://api.github.com/repos/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
                     && (!$ok || $status !== 200)
                 ){
                     $_SESSION['--FLASH']['toasts'][] =  "Invalid Repository, GitHub Response - {$status}";
@@ -2565,7 +2565,7 @@ function index__c(){
                 </div>
             <?php };
         } else if(
-            ([$ok, $status] = $this->curl_head($this->GH_URL = "https://github.com/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
+            ([$ok, $status] = $this->curl_head($this->GH_URL = "https://api.github.com/repos/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
             && (!$ok || $status !== 200)
         ){
             $this->vars['xui/main/content'] ??= function(){ ?>

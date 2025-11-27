@@ -2,6 +2,15 @@
 
 return new class extends \stdClass {
     
+    function __construct(){
+        $this->PLEX_DIR = $plex_dir = $_SERVER['_']['PLEX_DIR'];
+        (function($plex_dir, &$_) {
+            if(\is_file($cfg__f = "{$plex_dir}/.local-config.php")){
+                include $cfg__f;
+            }
+        })->bindTo(null,null)($this->PLEX_DIR, $this->_);
+    }
+    
     function pkg_info(){
         if(is_file($f = "{$this->PKG_DIR}/.info.txt")){
             try {
@@ -54,6 +63,7 @@ return new class extends \stdClass {
     
     function curl__set_token($token){
         $this->CURL_HEADERS['Accept'] = 'Accept: application/vnd.github+json';
+        $this->CURL_HEADERS['X-GitHub-Api-Version'] = "X-GitHub-Api-Version: 2022-11-28";
         if(!empty($token)){
             $this->CURL_HEADERS['Authorization'] = 'Authorization: Bearer ' . $token;
         } else {
@@ -265,6 +275,7 @@ return new class extends \stdClass {
         if($r_owner == 'synth'){
             return;
         }
+        $this->GH_TOKEN = trim($this->_[\_\api::class]['github.com']['token'] ?? '');
         $this->GH_OWNER = $r_owner;
         $this->GH_REPO = $r_repo;
         $this->PKG_NAME = $pkg_name;
@@ -272,7 +283,7 @@ return new class extends \stdClass {
         $this->GH_TOKEN ??= null;
         
         if(
-            ([$ok, $status] = $this->curl_head($this->GH_URL = "https://github.com/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
+            ([$ok, $status] = $this->curl_head($this->GH_URL = "https://api.github.com/repos/{$this->GH_OWNER}/{$this->GH_REPO}", $this->GH_TOKEN))
             && (!$ok || $status !== 200)
         ){
             throw new \Exception("Github Response {$status} for Package: {$pkg_path}");

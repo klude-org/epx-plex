@@ -3,7 +3,6 @@
 global $_;
 
 $acc__ft AND (function($f,&$_,&$_DEF){ include $f; })($acc__f,$_,$_DEF);
-$aic__ft AND (function($f,&$_,&$_DEF){ include $f; })($aic__f,$_,$_DEF);
 
 $env = $_;
 
@@ -34,12 +33,13 @@ foreach(\explode(PATH_SEPARATOR,\get_include_path()) as $v){
     $modules[\str_replace('\\','/', $v)] ??= true;
 }
 
-foreach($modules as $d => $en){
+foreach($modules as $d => &$en){
     if($en){
         if(\is_dir($d)){
             $GLOBALS['_TRACE'][] = "Module included: '".\str_replace('\\','/', $d)."'";
         } else {
             $GLOBALS['_TRACE'][] = "Warning: Module not found: '".\str_replace('\\','/', $d)."'";
+            $en = false;
         }
     } else {
         $GLOBALS['_TRACE'][] = "Notice: Module disabled: '".\str_replace('\\','/', $d)."'";

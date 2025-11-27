@@ -25,15 +25,12 @@ include (function(){
                 )
             ;
             $_SERVER['_']['INST_DIR'] = $inst_dir = \dirname($app_file,3);
-            $_SERVER['_']['APP_DIR'] = $app_dir = \dirname($app_file);
             $intfc = $_SERVER['_']['INTFC'];
             $lcl__ft = \is_file($f = $lcl__f = "{$inst_dir}/.local/.app-cache-{$intfc}.php") ? \filemtime($f) : 0;
             $acc__ft = \is_file($f = $acc__f = $app_file) ? \filemtime($f) : 0;
-            $aic__ft = \is_file($f = $aic__f = "{$app_dir}/.app-{$intfc}.php") ? \filemtime($f) : 0;
             if(
-                1
+                0
                 || $lcl__ft <= $acc__ft
-                || $lcl__ft <= $aic__ft
                 || $lcl__ft <= \filemtime(__FILE__)
                 || $lcl__ft <= \filemtime($_SERVER['SCRIPT_FILENAME'])
             ){

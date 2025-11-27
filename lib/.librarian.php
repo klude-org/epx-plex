@@ -51,10 +51,7 @@ function __construct(){
     \define('_\KEY', \md5($_SERVER['SCRIPT_FILENAME']));
     \define('_\START_FILE', \str_replace('\\','/', __FILE__));
     \define('_\START_DIR', \dirname(\_\START_FILE));
-    \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \dirname(\_\START_DIR, 2));
-    \defined('_\PLIB_DIR') OR \define('_\PLIB_DIR', \_\START_DIR);
     \define('_\IS_CLI', empty($_SERVER['HTTP_HOST']));
-    \define('_\APP_DIR', \is_dir($d = $GLOBALS['_']['APP_DIR'] ?? '') ? \str_replace('\\','/', $d) : \_\START_DIR);
     \define('_\OB_OUT', \ob_get_level());
     !empty($_SERVER['HTTP_HOST']) AND \ob_start();
     \define('_\OB_TOP', \ob_get_level());
@@ -63,8 +60,8 @@ function __construct(){
         'extensions' => \spl_autoload_extensions(),
         'path' =>  \get_include_path(),
     ]);
-    $this->PLEX_DIR = \_\PLEX_DIR;
-    $this->PLIB_DIR = \_\PLIB_DIR;
+    $this->PLEX_DIR = $_SERVER['_']['PLEX_DIR'] ?? null ?: \dirname(\_\START_DIR, 2);
+    $this->PLIB_DIR = $_SERVER['_']['PLIB_DIR'] ?? null ?: \_\START_DIR;
     $this->_['site_dir'] = (\_\IS_CLI
         ? \str_replace('\\','/',\realpath($_SERVER['.']['site_dir'] ?? \getcwd()))
         : \str_replace('\\','/',\realpath(\dirname($_SERVER['SCRIPT_FILENAME'])))
@@ -188,7 +185,7 @@ function __construct(){
         })();
     }
     
-    \is_file($file = \_\PLEX_DIR."/.local-http-root.php") OR \file_put_contents($file, <<<PHP
+    \is_file($file = $this->PLEX_DIR."/.local-http-root.php") OR \file_put_contents($file, <<<PHP
     <?php
     //return;
     \$root_dir ??= "{$this->_['root_dir']}";
@@ -200,7 +197,7 @@ function __construct(){
     
     $app_dir = $this->PLIB_DIR.'/app';
     $my_dir = $this->PLIB_DIR;
-    \is_file($file = \_\PLEX_DIR."/.local-start.php") OR \file_put_contents($file, <<<PHP
+    \is_file($file = $this->PLEX_DIR."/.local-start.php") OR \file_put_contents($file, <<<PHP
     <?php
     namespace {
         \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \str_replace('\\\\','/',__DIR__));
@@ -215,7 +212,7 @@ function __construct(){
     }
     PHP);
     
-    \is_file($file = \_\PLEX_DIR."/.local-config.php") OR \file_put_contents($file, <<<PHP
+    \is_file($file = $this->PLEX_DIR."/.local-config.php") OR \file_put_contents($file, <<<PHP
     <?php
     1 AND \$_[\_\api::class]['github.com']['token'] = '';
     1 AND \$_['USERS']['admin'] = [
@@ -1962,7 +1959,7 @@ function pkg__access_type(){
 
 function task__install_access(){
     $start_file = $this->PLIB_DIR.'/applet/launch.php';
-    $app_file = $this->PKG_DIR.'/lib/app/.app.php';
+    $app_file = $this->PKG_DIR.'/lib/app/.app-$$.php';
     $inst_dir = $this->PKG_DIR;
     $indexphp__content = <<<PHP
     <?php 
@@ -2005,6 +2002,63 @@ function task__install_app($s_dir, $app_file){
     \$_SERVER['_']['APP_FILE'] ??= '{$app_file}';
     include '{$start_file}';
     PHP);
+}
+
+function get_pkg_list(){
+    return $this->PKG_LIST ?? $this->PKG_LIST = \iterator_to_array((function(){
+        foreach(\glob("{$this->PLEX_DIR}/*", GLOB_ONLYDIR) as $d){
+            $d = \str_replace('\\','/', $d);
+            $pkey = \basename($d);
+            if(\preg_match('#^pkg~([\w\-\.]+)~([\w\-\.]+)(?:~(.+))?$#', $pkey, $m)){
+                $owner = $m[1];
+                $repo = $m[2];
+                $variant = $m[3] ?? null;
+                
+                $desc = "{$owner}/{$repo}";
+                if(is_file($f = "{$d}/lib/.info.txt")){
+                    try {
+                        $handle = fopen($f, 'r');
+                        if ($handle) {
+                            $line = fgets($handle);  // reads one line (up to newline or EOF)
+                            $desc = \trim($line);
+                        }
+                    } finally {
+                        empty($handle) OR fclose($handle);
+                    }
+                }
+                if(
+                    \is_file("{$d}/index.php")
+                    && \is_file("{$d}/.htaccess")
+                ){
+                    $go_url = "{$this->_['base_url']}/{$pkey}";
+                } else {
+                    $go_url = false;
+                }
+                if(
+                    \is_file("{$d}/lib/index.php")
+                    && \is_file("{$d}/lib/.htaccess")
+                ){
+                    $lib_tools_url = "{$this->_['base_url']}/{$pkey}/lib";
+                } else {
+                    $lib_tools_url = false;
+                }
+                yield $pkey => [
+                    'owner' => $owner,
+                    'repo' => $repo,
+                    'path' => $path = "{$owner}/{$repo}".($variant ? "/{$variant}" : ''),
+                    'name' => $variant ? "{$repo} ({$variant})" : "{$repo}",
+                    'disp' => $variant ? "{$repo} ({$variant})" : "{$repo}",
+                    'desc' => $desc,
+                    'dir' => $d,
+                    'lib_dir' => "{$d}/lib",
+                    'gh_url' => ($owner != 'synth') ? "https://github.com/{$owner}/{$repo}" : null,
+                    'pkg_manage_url' => "{$this->_['base_url']}/package/{$path}",
+                    'lib_tools_url' => $lib_tools_url,
+                    'go_url' => $go_url,
+                ];
+            }
+        }
+    })());
 }
 
 #endregion
@@ -2063,12 +2117,15 @@ function index__c(){
                         $data['linelist'][$k] = $v;
                         $data['linelist'][$k]['url'] = $s_url = "{$r_url}{$path}";
                         $data['linelist'][$k]['dir'] = $s_dir = "{$r_dir}{$path}";
-                        if(\basename($start_at) == '.app.php'){
+                        if(
+                            \str_starts_with($bn = \basename($start_at),'.app')
+                            && \str_ends_with($bn,'-$$.php')
+                        ){
                             $data['linelist'][$k]['app_file'] = $app_file = $start_at;
                             $data['linelist'][$k]['inst_dir'] = $inst_dir = \dirname($start_at,3);
                             $this->task__install_app($s_dir, $app_file);
                         } else {
-                            $start_file = \str_replace('\\','/', \realpath($start_at));
+                            $start_file = \str_replace('\\','/', $start_at);
                             $data['linelist'][$k]['start_file'] = $start_file;
                             $this->task__install_start($s_dir, $start_file);
                         }
@@ -2212,7 +2269,7 @@ function index__c(){
                 window.xui.ds.start_options = <?=\json_encode((function(){ 
                     $starts = [];
                     foreach($this->PKG_LIST as $k => $v){
-                        $vr = $v['repo'].' | '.$v['owner'];
+                        $vr = $v['path'];
                         $dl = "{$v['dir']}/lib";
                         foreach(\glob("{$dl}/{*/,}{.start}{-*,}.php", GLOB_BRACE) as $f){
                             //Todo: simplify using preg_match
@@ -2222,12 +2279,12 @@ function index__c(){
                                 : $m.' ('.\substr($n,7,-4).') | '.$vr
                             );
                         }
-                        foreach(\glob("{$dl}/*/{.app}{-*,}.php", GLOB_BRACE) as $f){
+                        foreach(\glob("{$dl}/*/{.app}{-*,}-$$.php", GLOB_BRACE) as $f){
                             //Todo: simplify using preg_match
                             $m = (($dx = \dirname($f)) == $dl) ? '[L]' : \basename($dx);
-                            $starts[$f] = 'APP | '.((($n = \basename($f)) == '.app.php')
+                            $starts[$f] = 'APP | '.((($n = \basename($f)) == '.app-$$.php')
                                 ? $m.' | '.$vr
-                                : $m.' ('.\substr($n,5,-4).') | '.$vr
+                                : $m.' ('.\substr($n,5,-7).') | '.$vr
                             );
                         }
                     }
@@ -2371,7 +2428,7 @@ function index__c(){
         }
         $this->vars['xui/main/content'] ??= function(){ ?>
             <div class="container-fluid d-flex flex-column justify-content-center align-items-center text-center min-vh-100">
-                <div style="max-width: 500px; width: 100%;">
+                <div style="max-width: 90vh; width: 100%;">
                     <h1 class="fw-semibold text-secondary mb-3">Add a New Synth</h1>
                     <p class="text-muted fs-6 mb-4">
                     Enter the absolute path of the target Library
@@ -2380,27 +2437,65 @@ function index__c(){
                         <input type="hidden" name="--csrf" value="<?= htmlspecialchars(\_\CSRF) ?>">
                         <input type="hidden" name="--action" value="new">
                         <div class="input-group input-group-lg">
+
+                            <!-- LEFT DROPDOWN -->
+                            <div class="input-group-text p-0">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary dropdown-toggle h-100 border-0 rounded-0" 
+                                            type="button" 
+                                            data-bs-toggle="dropdown" 
+                                            aria-expanded="false">
+                                        Paths
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <?php foreach ($this->get_pkg_list() ?? [] as $k => $v): if(\is_dir($v['lib_dir'])): ?>
+                                            <li>
+                                                <a class="dropdown-item xui-path-option" 
+                                                href="#"
+                                                data-value="<?= htmlspecialchars($v['lib_dir']) ?>">
+                                                <?= htmlspecialchars($v['path']) ?>
+                                                </a>
+                                            </li>
+                                        <?php endif; endforeach; ?>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- EXISTING INPUTS -->
                             <input 
-                            type="text" 
-                            name="path"
-                            class="form-control" 
-                            placeholder="/abs/path/to/pkg/dir" 
-                            aria-label="Package Path"
-                            required
+                                type="text"
+                                name="path"
+                                id="pathInput"
+                                class="form-control"
+                                placeholder="/abs/path/to/pkg/lib_dir"
+                                aria-label="Library Path"
+                                required
                             >
                             <input 
-                            type="text" 
-                            name="synth_name"
-                            class="form-control" 
-                            placeholder="name" 
-                            aria-label="Variant Name"
-                            required
+                                type="text"
+                                name="synth_name"
+                                class="form-control"
+                                placeholder="name"
+                                aria-label="Synth Name"
+                                required
                             >
                             <button class="btn btn-primary" type="submit">Add</button>
                         </div>
+
                     </form>
                 </div>
             </div>
+            <script>
+                document.addEventListener("DOMContentLoaded", function () {
+                    document.querySelectorAll(".xui-path-option").forEach(item => {
+                        item.addEventListener("click", function (e) {
+                            e.preventDefault();
+                            const val = this.dataset.value;
+                            document.getElementById("pathInput").value = val;
+                        });
+                    });
+                });
+            </script>
         <?php };
     } else if(\str_starts_with($rurp, '/package')){
         \strtok($rurp,'/');
@@ -2427,7 +2522,7 @@ function index__c(){
                     $this->PKG_NAME = $this->PKG_STUB;
                     $pkg_dir = $this->PKG_DIR;
                     $pkg_name = $this->PKG_NAME;
-                    $backup_dir = \_\PLEX_DIR."/.local/".($backup_name = "pkg~{$pkg_name}-[deleted-".\date('Y-md-Hi-s')."][".uniqid()."]");
+                    $backup_dir = $this->PLEX_DIR."/.local/".($backup_name = "pkg~{$pkg_name}-[deleted-".\date('Y-md-Hi-s')."][".uniqid()."]");
                     if(\is_dir($d = $pkg_dir) && !$this->fs_rename($d, $backup_dir)){
                         throw new \Exception("Failed: Unable to modify the '{$pkg_name}' directory - it might be in use!!!");
                     }
@@ -2452,7 +2547,7 @@ function index__c(){
                         </p>
                     </div>
                     <div class="row">
-                        <?php if(\is_file($this->PKG_DIR.'/lib/app/.app.php')): ?>
+                        <?php if(\is_file($this->PKG_DIR.'/lib/app/.app-$$.php')): ?>
                         <div class="col">
                             <select class="form-control" id="selectPackageAccess">
                                 <option value="<?=$x='no-access'?>" <?=$this->pkg__access_type() == $x ? 'selected' : ''?>>None</option>
@@ -2499,7 +2594,7 @@ function index__c(){
                         if ($action === 'delete') {
                             $pkg_dir = $this->PKG_DIR;
                             $pkg_name = $this->PKG_NAME;
-                            $backup_dir = \_\PLEX_DIR."/.local/".($backup_name = "pkg~{$pkg_name}-[deleted-".\date('Y-md-Hi-s')."][".uniqid()."]");
+                            $backup_dir = $this->PLEX_DIR."/.local/".($backup_name = "pkg~{$pkg_name}-[deleted-".\date('Y-md-Hi-s')."][".uniqid()."]");
                             if(\is_dir($d = $pkg_dir) && !\rename($d, $backup_dir)){
                                 throw new \Exception("Failed: Unable to modify the '{$pkg_name}' directory - it might be in use!!!");
                             }
@@ -2567,13 +2662,13 @@ function index__c(){
                             $pkg_name = $this->PKG_NAME;
                             $pkg_dir = $this->PKG_DIR;
                             $lib_dir = "{$pkg_dir}/lib";
-                            $local_dir = \_\PLEX_DIR.'/.local';
+                            $local_dir = $this->PLEX_DIR.'/.local';
                             $zip_dir = "{$local_dir}/".
                                 ($zip_name = "pkg-download-".(\str_replace('/','][',"[github/{$r_owner}/{$r_repo}/{$r_type}/{$r_version}]")))
                             ;
                             $zip_code_file = "{$zip_dir}/code.zip";
                             $extract_dir = "{$zip_dir}/extract";
-                            $backup_dir = \_\PLEX_DIR."/.local/".($backup_name = "lib-stash-[{$pkg_name}][".\date('Y-md-Hi-s')."][".uniqid()."]");
+                            $backup_dir = $this->PLEX_DIR."/.local/".($backup_name = "lib-stash-[{$pkg_name}][".\date('Y-md-Hi-s')."][".uniqid()."]");
                             $meta_json = "{$lib_dir}/.lib.json";
                             $meta_data = [
                                 'installed_on' => \date('Y-m-d H:i:s'),
@@ -2656,63 +2751,10 @@ function index__c(){
                 </p>
             </div>
             </div>
-        <?php };        
+        <?php };
     }
     
-    $this->PKG_LIST = \iterator_to_array((function(){
-        foreach(\glob("{$this->PLEX_DIR}/*", GLOB_ONLYDIR) as $d){
-            $d = \str_replace('\\','/', $d);
-            $pkey = \basename($d);
-            if(\preg_match('#^pkg~([\w\-\.]+)~([\w\-\.]+)(?:~(.+))?$#', $pkey, $m)){
-                $owner = $m[1];
-                $repo = $m[2];
-                $variant = $m[3] ?? null;
-                
-                $desc = "{$owner}/{$repo}";
-                if(is_file($f = "{$d}/lib/.info.txt")){
-                    try {
-                        $handle = fopen($f, 'r');
-                        if ($handle) {
-                            $line = fgets($handle);  // reads one line (up to newline or EOF)
-                            $desc = \trim($line);
-                        }
-                    } finally {
-                        empty($handle) OR fclose($handle);
-                    }
-                }
-                if(
-                    \is_file("{$d}/index.php")
-                    && \is_file("{$d}/.htaccess")
-                ){
-                    $go_url = "{$this->_['base_url']}/{$pkey}";
-                } else {
-                    $go_url = false;
-                }
-                if(
-                    \is_file("{$d}/lib/index.php")
-                    && \is_file("{$d}/lib/.htaccess")
-                ){
-                    $lib_tools_url = "{$this->_['base_url']}/{$pkey}/lib";
-                } else {
-                    $lib_tools_url = false;
-                }
-                yield $pkey => [
-                    'owner' => $owner,
-                    'repo' => $repo,
-                    'path' => $path = "{$owner}/{$repo}".($variant ? "/{$variant}" : ''),
-                    'name' => $variant ? "{$repo} ({$variant})" : "{$repo}",
-                    'disp' => $variant ? "{$repo} ({$variant})" : "{$repo}",
-                    'desc' => $desc,
-                    'dir' => $d,
-                    'lib_dir' => "{$d}/lib",
-                    'gh_url' => ($owner != 'synth') ? "https://github.com/{$owner}/{$repo}" : null,
-                    'pkg_manage_url' => "{$this->_['base_url']}/package/{$path}",
-                    'lib_tools_url' => $lib_tools_url,
-                    'go_url' => $go_url,
-                ];
-            }
-        }
-    })());
+    $this->get_pkg_list();
     
     $this->vars['ui/page/tab/title'] = $this->PKG_NAME ?? '';
     $this->vars['ui/page/title'] = $this->PKG_VARIANT ? "{$this->GH_REPO} ({$this->PKG_VARIANT})" : "{$this->GH_REPO}";
@@ -2945,7 +2987,7 @@ function index__c(){
                                 </div>
                             </div>
                         </div>
-                        <?php if(\is_file($this->PKG_DIR.'/lib/app/.app.php')): ?>
+                        <?php if(\is_file($this->PKG_DIR.'/lib/app/.app-$$.php')): ?>
                         <div class="row">
                             <div class="col mb-2">
                                 <label class="form-label">Access</label>

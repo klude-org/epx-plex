@@ -13,19 +13,48 @@ $modules[\dirname($app_file)] = true;
 foreach($_['MODULES'] ?? [] as $k => $v){
     if(\is_numeric($k)){
         if(($m = $v[0]) && ($p = $v[1] ?? '')){
-            $modules[($d = \str_replace('\\','/', $_SERVER['_']['PLEX_DIR'].'/pkg~'.($n = \str_replace('/','~',$p)))).'/lib/'.$m] ??= true;
-            if(!\is_dir($d)){
-                (include 'install.php')($n, $p, $d);
+            if($p[0] == '/' || ($p[1] ?? null) == ':'){
+                $modules[\str_replace('\\','/', $p)."/{$m}"] ??= true;
+            } else {
+                $modules[$d = \str_replace('\\','/', $_SERVER['_']['PLEX_DIR'].'/pkg~'.($n = \str_replace('/','~',$p))).'/lib/'.$m] ??= true;
+                if(!\is_dir($d)){
+                    (include 'install.php')($n, $p, $d);
+                }
             }
         } else if($m){
-            $modules[\dirname($app_file,2).'/'.$m] ??= true;
+            $p = $m;
+            if($p[0] == '/' || ($p[1] ?? null) == ':'){
+                $modules[\str_replace('\\','/', $p)] ??= true;
+            } else {
+                $modules[\dirname($app_file,2).'/'.$p] ??= true;    
+            }
         } else {
-            //ignore for now
+            $GLOBALS['_TRACE'][] = "Warning: Module resolve error: '{$k}'";
         }
     } else if(\is_bool($v)){
-        $modules[\str_replace('\\','/',$k)] = $v;
+        $p = $k;
+        if($p[0] == '/' || ($p[1] ?? null) == ':'){
+            $modules[\str_replace('\\','/', $p)] ??= $v;
+        } else if(\str_starts_with($p,'../')) {
+            $modules[\str_replace('\\','/', \dirname($_SERVER['_']['APP_DIR']).\substr($p,2))] ??= $v;
+        } else if(\str_starts_with($p,'.../')) {
+            $p = \substr($p,3);
+            for (
+                $i=0, $dx=$_SERVER['_']['APP_DIR']; 
+                $dx && $i < 20 ; 
+                $i++, $dx = (\strchr($dx, DIRECTORY_SEPARATOR) != DIRECTORY_SEPARATOR) ? \dirname($dx) : null
+            ){ 
+                if(\is_dir($dy = $dx.$p)){
+                    $modules[\str_replace('\\','/', $dy)] = true;
+                    continue 2;
+                }
+            }
+            $GLOBALS['_TRACE'][] = "Warning: Module resolve error: '{$k}'";
+        } else {
+            $GLOBALS['_TRACE'][] = "Warning: Module resolve error: '{$k}'";
+        }
     } else {
-        //ignore for now
+        $GLOBALS['_TRACE'][] = "Warning: Module resolve error: '{$k}'";
     }
 }
 

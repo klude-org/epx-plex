@@ -194,27 +194,18 @@ function __construct(){
     \$_ENV["DB_USERNAME"] ??= "root"; 
     \$_ENV["DB_PASSWORD"] ??= "pass"; 
     PHP);
-    
+
     $app_dir = $this->PLIB_DIR.'/app';
-    $my_dir = $this->PLIB_DIR;
-    \is_file($file = $this->PLEX_DIR."/.local-start.php") OR \file_put_contents($file, <<<PHP
-    <?php
-    namespace {
-        \defined('_\PLEX_DIR') OR \define('_\PLEX_DIR', \str_replace('\\\\','/',__DIR__));
-        if(\is_file(\$f = (\$_SERVER['FW__SITE_DIR'] ??= (empty(\$_SERVER['HTTP_HOST'])
-            ? \str_replace('\\\\','/',\\realpath(\$_SERVER['FW__SITE_DIR'] ?? \getcwd()))
-            : \str_replace('\\\\','/',\\realpath(\dirname(\$_SERVER['SCRIPT_FILENAME'])))
-        )).'/.cache-start.php')){
-            return include \$f;
-        } else {
-            return include '{$app_dir}/.start.php';
-        }
-    }
-    PHP);
     
+    \is_file($file = $this->PLEX_DIR."/.launch.php") OR \file_put_contents($file, <<<PHP
+    <?php return include (\$_SERVER['_']['PLEX_DIR'] ??= '{$this->PLEX_DIR}').'/pkg~klude-org~epx-plex/lib/applet/launch.php';
+    PHP);
+    \is_file($file = $this->PLEX_DIR."/.start.php") OR \file_put_contents($file, <<<PHP
+    <?php return include (\$_SERVER['_']['PLEX_DIR'] ??= '{$this->PLEX_DIR}').'/pkg~klude-org~epx-plex/lib/applet/start.php';
+    PHP);
     \is_file($file = $this->PLEX_DIR."/.local-config.php") OR \file_put_contents($file, <<<PHP
     <?php
-    1 AND \$_[\_\api::class]['github.com']['token'] = '';
+    1 AND \$_[\\_\\api::class]['github.com']['token'] = '';
     1 AND \$_['USERS']['admin'] = [
         'display_name' => 'Admin',
         'password' => \md5('pass'),

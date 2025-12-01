@@ -7,7 +7,7 @@ namespace {
     \define('_\OB_TOP', \ob_get_level());
     const _ = '_'; 
 }
-namespace { ( function(){
+namespace { return ( function(){
     try {
         $this->abort__fn = function($code, $message){
             if($this->is_cli){
@@ -45,7 +45,6 @@ namespace { ( function(){
             PATH_SEPARATOR, 
             \array_keys($this->tsp_list ?? $this->tsp_list = (\iterator_to_array((function(){
                 yield $this->site_dir => true;
-                yield $this->start_dir => true;
                 foreach(\explode(PATH_SEPARATOR, $this->php_tsp_defaults['path']) as $dir){
                     if(\is_dir($dir)){
                         yield \str_replace('\\','/', $dir) => 1;

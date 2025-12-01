@@ -1,32 +1,47 @@
 <?php 
 
-include (function(){
+return (include (function(){
     
     try{
         
         global $_;
         (isset($_) && \is_array($_)) OR $_ = [];
+
+        $_SERVER['_']['INTFC'] ??= $_SERVER['FW__INTFC']
+            ?? (empty($_SERVER['HTTP_HOST']) 
+                ? 'cli'
+                : $_SERVER['HTTP_X_REQUEST_INTERFACE'] ?? 'web'
+            )
+        ;
+        $_SERVER['_']['PLEX_DIR'] ??= \str_replace('\\','/', \dirname(__DIR__,2));
+        $_SERVER['_']['PLIB_DIR'] ??= \str_replace('\\','/', \dirname(__DIR__));
+        $_SERVER['_']['SITE_DIR'] ??= (empty($_SERVER['HTTP_HOST'])
+            ? \str_replace('\\','/',\realpath($_SERVER['FW__SITE_DIR'] ?? \getcwd()))
+            : \str_replace('\\','/',\realpath(\dirname($_SERVER['SCRIPT_FILENAME'])))
+        );
+        $_SERVER['_']['APP_FILE'] ??= (function(){
+            if(
+                \is_file($f = $r[] = $_SERVER['_']['SITE_DIR'].'/.app-$$.php')
+                || \is_file($f = $r[] = $_SERVER['_']['SITE_DIR'].'/app/.app-$$.php')
+                || \is_file($f = $r[] = $_SERVER['_']['SITE_DIR'].'/lib/app/.app-$$.php')
+            ){
+                $_SERVER['_']['INST_DIR'] = \dirname($f,count($r));
+                return $f;
+            } else {
+                return null;
+            }
+        })();
+        $_SERVER['_']['INST_DIR'] ??= $_SERVER['_']['SITE_DIR'];
+        $_SERVER['_']['PHP_TSP_DEFAULTS'] = [
+            'handler' => 'spl_autoload',
+            'extensions' => \spl_autoload_extensions(),
+            'path' =>  \get_include_path(),
+        ];
         
         if($app_file = $_SERVER['_']['APP_FILE'] ?? null){
-            \define('_\PHP_TSP_DEFAULTS', [
-                'handler' => 'spl_autoload',
-                'extensions' => \spl_autoload_extensions(),
-                'path' =>  \get_include_path(),
-            ]);
-            $_SERVER['_']['PLEX_DIR'] ??= \str_replace('\\','/', \dirname(__DIR__,2));
-            $_SERVER['_']['SITE_DIR'] ??= (empty($_SERVER['HTTP_HOST'])
-                ? \str_replace('\\','/',\realpath($_SERVER['FW__SITE_DIR'] ?? \getcwd()))
-                : \str_replace('\\','/',\realpath(\dirname($_SERVER['SCRIPT_FILENAME'])))
-            );
-            $_SERVER['_']['INTFC'] ??= $_SERVER['FW__INTFC']
-                ?? (empty($_SERVER['HTTP_HOST']) 
-                    ? 'cli'
-                    : $_SERVER['HTTP_X_REQUEST_INTERFACE'] ?? 'web'
-                )
-            ;
-            $_SERVER['_']['INST_DIR'] = $inst_dir = \dirname($app_file,3);
+            $_SERVER['_']['APP_DIR'] = \dirname($app_file);
             $intfc = $_SERVER['_']['INTFC'];
-            $lcl__ft = \is_file($f = $lcl__f = "{$inst_dir}/.local/.app-cache-{$intfc}.php") ? \filemtime($f) : 0;
+            $lcl__ft = \is_file($f = $lcl__f = "{$_SERVER['_']['INST_DIR']}/.local/.app-cache-{$intfc}.php") ? \filemtime($f) : 0;
             $acc__ft = \is_file($f = $acc__f = $app_file) ? \filemtime($f) : 0;
             if(
                 0
@@ -56,9 +71,15 @@ include (function(){
             \set_include_path($_ENV['TSP']['PATH']);
             \spl_autoload_extensions("-#{$intfc}.php,/-#{$intfc}.php,-#.php,/-#.php");
             \spl_autoload_register();
+        } else {
+            $_SERVER['_']['APP_DIR'] = $_SERVER['_']['SITE_DIR'];
         }
         
-        return \stream_resolve_include_path('.start.php') ?: \dirname(__DIR__).'/app/.start.php';
+        $f = \stream_resolve_include_path('.start.php') ?: "{$_SERVER['_']['PLIB_DIR']}/app/.start.php";
+        
+        $GLOBALS['_TRACE'][] = "start file: {$f}";
+        
+        return $f;
         
     
     } catch(\Throwable $ex) {
@@ -116,4 +137,4 @@ include (function(){
     }
     
     
-})();
+})());
